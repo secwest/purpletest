@@ -159,6 +159,38 @@ def process_split(dataset_name, config_name, split, paginate):
 
 
 
+def process_configuration(dataset_name, config_name, paginate):
+    # Load the dataset to list available splits
+    try:
+        dataset = load_dataset(dataset_name, config_name, split=None)
+    except Exception as e:
+        print(f"Failed to load dataset '{dataset_name}' with configuration '{config_name}': {e}")
+        return
+
+    splits = dataset.keys() if dataset else []
+    print(f"Available splits for '{config_name}':")
+    for i, split in enumerate(splits, start=1):
+        print(f"{i}. {split}")
+    print(f"{len(splits) + 1}. Do all")
+
+    split_choice = input("Select a split by number, or 'Do all': ")
+    if split_choice.lower() == 'q':
+        return
+
+    try:
+        split_choice = int(split_choice)
+        assert 1 <= split_choice <= len(splits) + 1
+    except (ValueError, AssertionError):
+        print("Invalid selection. Please enter a valid number.")
+        return
+
+    if 1 <= split_choice <= len(splits):
+        selected_split = list(splits)[split_choice-1]
+        process_split(dataset_name, config_name, selected_split, paginate)
+    elif split_choice == len(splits) + 1:
+        for split in splits:
+            process_split(dataset_name, config_name, split, paginate)
+
 
 def main():
     parser = argparse.ArgumentParser(description="Interactively browse a Hugging Face dataset with optional pagination, and output full prompt text for questions.")
