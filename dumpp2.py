@@ -144,12 +144,12 @@ def check_template_fields(dataset, dataset_name, config_name):
     return True, [], available_fields
 
 
-def recursively_process_all(dataset_name, configs):
+def recursively_process_all(dataset_name, configs, paginate):
     for config_name in configs:
         dataset = load_dataset(dataset_name, config_name, split=None)
         splits = list(dataset.keys())
         for split in splits:
-            process_split(dataset_name, config_name, split, paginate=None)
+            process_split(dataset_name, config_name, split, paginate)
 
 
 def process_split(dataset_name, config_name, split, paginate):
@@ -195,9 +195,24 @@ def process_configuration(dataset_name, config_name, paginate):
 def main():
     parser = argparse.ArgumentParser(description="Interactively browse a Hugging Face dataset with optional pagination, and output full prompt text for questions.")
     parser.add_argument("dataset_name", help="The name of the dataset to browse.")
-    parser.add_argument("-np", "--no-pagination", action="store_true", help="Disable pagination. If not set, pagination defaults to 100 entries.")
+    parser.add_argument("-p", type=int, default=100, help="Set pagination size (number of entries per page). Use -p=0 to disable pagination.")
+    parser.add_argument("-np", "--no-pagination", action="store_true", help="Disable pagination. Overrides -p if both are used.")
+
     args = parser.parse_args()
 
+    # If no-pagination flag is set, override pagination size to 0
+    if args.no_pagination:
+        paginate = 0
+    else:
+        paginate = args.p
+
+    while True:
+        configs = get_dataset_config_names(args.dataset_name)
+        if not configs:
+            print("No configurations found for this dataset.")
+            return
+
+ 
     while True:
         configs = get_dataset_config_names(args.dataset_name)
         if not configs:
@@ -224,12 +239,12 @@ def main():
 
         if 1 <= choice <= len(configs):
             config_name = configs[choice-1]
-            process_configuration(args.dataset_name, config_name)
+            process_configuration(args.dataset_name, config_name, paginate)
         elif choice == len(configs) + 1:
             for config_name in configs:
-                process_configuration(args.dataset_name, config_name)
+                process_configuration(args.dataset_name, config_name, paginate)
         elif choice == len(configs) + 2:
-            recursively_process_all(args.dataset_name, configs)  # Handle recursive processing
+            recursively_process_all(args.dataset_name, configs, paginate)  # Handle recursive processing
 
 if __name__ == "__main__":
     main()
