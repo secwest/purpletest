@@ -1,4 +1,10 @@
 import argparse
+import logging
+import re
+
+
+
+
 from datasets import load_dataset, get_dataset_config_names
 
 def select_option(options, prompt, allow_quit=False, allow_all=False):
@@ -123,6 +129,12 @@ def check_template_fields(dataset, dataset_name, config_name):
     # Fetch a sample entry from the dataset
     sample_entry = next(iter(dataset), {})
     
+    # Ensure sample_entry is a dictionary
+    if not isinstance(sample_entry, dict):
+        logging.error(f"Expected a dictionary for sample entry, but got: {type(sample_entry)}")
+        return False, [], []
+
+    
     # Determine missing and available fields in the sample entry
     missing_fields = [field for field in all_required_fields if field not in sample_entry]
     available_fields = list(sample_entry.keys())
@@ -131,65 +143,61 @@ def check_template_fields(dataset, dataset_name, config_name):
         return False, missing_fields, available_fields
     return True, [], available_fields
 
+
+def recursively_process_all(dataset_name, configs):
+    for config_name in configs:
+        dataset = load_dataset(dataset_name, config_name, split=None)
+        splits = list(dataset.keys())
+        for split in splits:
+            process_split(dataset_name, config_name, split, paginate=None)
+
+
+def process_split(dataset_name, config_name, split, paginate):
+    print(f"Processing {dataset_name} with configuration '{config_name}', split '{split}'...")
+    dataset = load_dataset(dataset_name, config_name, split=split)
+    print_dataset_entries(dataset, dataset_name, config_name, paginate)
+
+
+
+
 def main():
     parser = argparse.ArgumentParser(description="Interactively browse a Hugging Face dataset with optional pagination, and output full prompt text for questions.")
     parser.add_argument("dataset_name", help="The name of the dataset to browse.")
     parser.add_argument("-np", "--no-pagination", action="store_true", help="Disable pagination. If not set, pagination defaults to 100 entries.")
     args = parser.parse_args()
 
-    paginate = 0 if args.no_pagination else 100
-
     while True:
         configs = get_dataset_config_names(args.dataset_name)
         if not configs:
             print("No configurations found for this dataset.")
-            break
+            return
 
         print("Available configurations include:")
         for index, config in enumerate(configs, start=1):
             print(f"{index}. {config}")
-        print(f"{len(configs)+1}. Do all")
-        
-        choice = input("Select a configuration by number, 'q' to quit, or select 'Do all': ")
-        
+        print(f"{len(configs) + 1}. Do all")
+        print(f"{len(configs) + 2}. Recursively do all")  # New option for recursive processing
+
+        choice = input("Select a configuration by number, 'q' to quit, 'Do all', or 'Recursively do all': ")
+
         if choice.lower() == 'q':
             break
-        
+
         try:
             choice = int(choice)
-            assert 1 <= choice <= len(configs) + 1
+            assert 1 <= choice <= len(configs) + 2
         except (ValueError, AssertionError):
-            print("Invalid selection. Please enter a valid number or 'q' to quit.")
+            print("Invalid selection. Please enter a valid number, 'q' to quit.")
             continue
 
-        if choice <= len(configs):
+        if 1 <= choice <= len(configs):
             config_name = configs[choice-1]
-            dataset = load_dataset(args.dataset_name, config_name, split=None)
-
-
-  	        # Perform the template field check
-            fields_ok, missing_fields, available_fields = check_template_fields(dataset, args.dataset_name, config_name)
-            if not fields_ok:
-                print(f"Error: The selected dataset configuration '{config_name}' does not contain the required fields for its template. Missing fields: {', '.join(missing_fields)}.")
-                print(f"Available fields in the dataset: {', '.join(available_fields)}")
-                return  # Exit or handle the error as needed
-    
-
-            splits = list(dataset.keys())
-            for split in splits:
-                split_dataset = dataset[split]
-                print(f"Browsing '{args.dataset_name}' dataset with configuration '{config_name}', split '{split}':")
-                print_dataset_entries(split_dataset, args.dataset_name, config_name, paginate)
+            process_configuration(args.dataset_name, config_name)
         elif choice == len(configs) + 1:
-            # Handle 'Do all' option
-            for config in configs:
-                dataset = load_dataset(args.dataset_name, config, split=None)
-                splits = list(dataset.keys())
-                for split in splits:
-                    split_dataset = dataset[split]
-                    print(f"\nBrowsing '{args.dataset_name}' dataset with configuration '{config}', split '{split}':")
-                    print_dataset_entries(split_dataset, args.dataset_name, config, paginate)
-            break  # Exit after doing all
+            for config_name in configs:
+                process_configuration(args.dataset_name, config_name)
+        elif choice == len(configs) + 2:
+            recursively_process_all(args.dataset_name, configs)  # Handle recursive processing
 
 if __name__ == "__main__":
     main()
