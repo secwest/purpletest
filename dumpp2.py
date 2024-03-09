@@ -205,13 +205,6 @@ def main():
         paginate = 0
     else:
         paginate = args.p
-
-    while True:
-        configs = get_dataset_config_names(args.dataset_name)
-        if not configs:
-            print("No configurations found for this dataset.")
-            return
-
  
     while True:
         configs = get_dataset_config_names(args.dataset_name)
