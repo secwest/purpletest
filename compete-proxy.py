@@ -1,8 +1,10 @@
+
 import argparse
 import asyncio
 import logging
 import pandas as pd
 import websockets
+import aioconsole
 from pathlib import Path
 
 # Setup logging
