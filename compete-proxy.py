@@ -87,7 +87,7 @@ async def handle_logout(websocket, session):
     return "Logged out successfully."
 
 def display_scores(websocket, session):
-    score = scores.get(session['teamname'], 0)
+    score = scoreboard(websocket, session, 0)
     return f"{session['teamname']} score: {score}"
 
 async def handle_receive_prompt(websocket, session):
