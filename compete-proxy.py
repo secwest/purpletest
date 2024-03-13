@@ -8,16 +8,18 @@ from pathlib import Path
 # Set up logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Global variables
+# Global variables for user data and session management
 user_data = {}
 active_sessions = {"defender": None, "attackers": []}
 
 def validate_file(file_path):
+    """Validate if the specified file exists."""
     if not Path(file_path).is_file():
         raise argparse.ArgumentTypeError(f"The file {file_path} does not exist.")
     return file_path
 
 def load_user_data(api_key_file):
+    """Load user data from a CSV file into a dictionary."""
     try:
         data = pd.read_csv(api_key_file)
         for _, row in data.iterrows():
@@ -28,6 +30,7 @@ def load_user_data(api_key_file):
         exit(1)
 
 async def authenticate(websocket):
+    """Authenticate the user and determine their role."""
     try:
         auth_message = await websocket.recv()
         teamname, apikey = auth_message.split()
@@ -41,47 +44,36 @@ async def authenticate(websocket):
         return None, None
 
 async def handler(websocket, path):
+    """Handle incoming WebSocket connections based on user role."""
     role, teamname = await authenticate(websocket)
     if role == "defender":
         if active_sessions["defender"] is None:
             active_sessions["defender"] = websocket
             logging.info(f"Defender {teamname} connected.")
             await websocket.send("You are connected as the defender.")
-            await defender_handler(websocket, teamname)
+            # Placeholder for defender-specific logic
         else:
             await websocket.send("Another defender is already connected.")
     elif role == "attacker":
         active_sessions["attackers"].append(websocket)
         logging.info(f"Attacker {teamname} connected.")
         await websocket.send("You are connected as an attacker.")
-        await attacker_handler(websocket, teamname)
+        # Placeholder for attacker-specific logic
     else:
         await websocket.send("Invalid role or authentication failed.")
 
-async def defender_handler(websocket, teamname):
-    try:
-        async for message in websocket:
-            # Process messages from the defender
-            logging.info(f"Message from defender {teamname}: {message}")
-            # Include logic specific to defenders here
-    finally:
+    # Clean up session on disconnection
+    if role == "defender":
         active_sessions["defender"] = None
         logging.info(f"Defender {teamname} disconnected.")
-
-async def attacker_handler(websocket, teamname):
-    try:
-        async for message in websocket:
-            # Process messages from attackers
-            logging.info(f"Message from attacker {teamname}: {message}")
-            # Include logic specific to attackers here
-    finally:
+    elif role == "attacker":
         active_sessions["attackers"].remove(websocket)
         logging.info(f"Attacker {teamname} disconnected.")
 
 def main():
+    """Parse command-line arguments and start the WebSocket server."""
     parser = argparse.ArgumentParser(description="Starts the contest proxy server.")
     parser.add_argument('--api-key-file', type=validate_file, required=True, help="Path to the API key file.")
-    parser.add_argument('--config-file', type=validate_file, required=True, help="Path to the benchmark configuration file.")
     parser.add_argument('--port', type=int, default=6789, help="Server port.")
 
     args = parser.parse_args()
@@ -92,3 +84,5 @@ def main():
     asyncio.get_event_loop().run_until_complete(start_server)
     asyncio.get_event_loop().run_forever()
 
+if __name__ == "__main__":
+    main()
