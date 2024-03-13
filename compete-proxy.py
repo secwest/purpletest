@@ -60,7 +60,7 @@ async def process_command(websocket, session, command):
         response = "Already logged in."
     elif command_type in ["logout", "lo"]:
         response = await handle_logout(websocket, session)
-    elif command_type in ["score"]:
+    elif command_type in ["score", "sc"]:
         response = display_scores(session)
     elif command_type in ["receive-prompt", "p"]:
         response = await handle_receive_prompt(websocket, session)
@@ -71,9 +71,9 @@ async def process_command(websocket, session, command):
     elif command_type in ["submit-attack", "a"]:
         response = await handle_submit_attack(websocket, session, additional_parts)
     elif command_type in ["--version", "-v"]:
-        response = "Competition CLI Version 1.0"
+        response = "LLM Purple Test Competition CLI Version 1.0"
     elif command_type in ["--help", "-h"]:
-        response = "Available commands: login, logout, score, receive-prompt (p), submit-answer (a), request-token (r), submit-attack (a), --version, --help"
+        response = "Available commands: login(l), logout(lo), score(sc), receive-prompt(p), submit-answer(s), request-token(r), submit-attack(a), --version(-v), --help(-h)"
     else:
         response = "Unknown command or malformed input."
     
