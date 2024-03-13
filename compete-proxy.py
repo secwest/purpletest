@@ -45,7 +45,7 @@ async def authenticate(websocket):
         teamname, apikey = parts[1], parts[2]
         if teamname in user_data and user_data[teamname]['apikey'] == apikey:
             session_role = user_data[teamname]['role']
-            # Adjusting for defender to store both team name and websocket
+            # Defender stores a team name and websocket
             if session_role == "defender" and not active_sessions["defender"]:
                 active_sessions["defender"] = {"teamname": teamname, "websocket": websocket}
             # Attackers stores a list of dictionaries, each with team name and websocket
