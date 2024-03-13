@@ -69,7 +69,7 @@ async def process_command(websocket, session, command):
     elif command_type in ["request-token", "r"]:
         response = await handle_request_token(websocket, session)
     elif command_type in ["submit-attack", "a"]:
-        response = await handle_submit_attack(session, additional_parts)
+        response = await handle_submit_attack(websocket, session, additional_parts)
     elif command_type in ["--version", "-v"]:
         response = "Competition CLI Version 1.0"
     elif command_type in ["--help", "-h"]:
@@ -100,13 +100,14 @@ async def handle_submit_answer(websocket, session, answer_parts):
     if session['role'] != "defender":
         return "ERROR: Only defenders can submit answers."
     answer = " ".join(answer_parts)
-    scores[session['teamname']] = scores.get(session['teamname'], 0) + len(answer) % 10  # Simplified scoring
-    return f"Answer received: '{answer}'. Scoring init."
+    result = submit_answer(websocket, session, answer)
+    return f"Answer received: '{answer}'. Result: '{result}'. "
 
 async def handle_request_token(websocket, session):
     if session['role'] != "attacker":
         return "ERROR: Only attackers can request tokens."
-    return "Token generated. (Placeholder)"
+    token = request_attack_token(websocket, session)
+    return "Token generated: '{token}'."
 
 
 async def handle_submit_attack(websocket, session, parts):
