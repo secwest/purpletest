@@ -12,7 +12,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(
 
 # Global variables
 user_data = {}
-active_sessions = {"defender": None, "attackers": []}
+active_sessions = {"defender": {}, "attackers": []} 
 prompt_queue = asyncio.Queue()
 scores = {}
 for i in range(1, 101):
@@ -37,6 +37,7 @@ def load_user_data(api_key_file):
         exit(1)
 
 
+
 async def authenticate(websocket):
     auth_message = await websocket.recv()
     parts = auth_message.strip().split()
@@ -44,10 +45,12 @@ async def authenticate(websocket):
         teamname, apikey = parts[1], parts[2]
         if teamname in user_data and user_data[teamname]['apikey'] == apikey:
             session_role = user_data[teamname]['role']
+            # Adjusting for defender to store both team name and websocket
             if session_role == "defender" and not active_sessions["defender"]:
-                active_sessions["defender"] = websocket
+                active_sessions["defender"] = {"teamname": teamname, "websocket": websocket}
+            # Adjusting for attackers to store a list of dictionaries, each with team name and websocket
             elif session_role == "attacker":
-                active_sessions["attackers"].append(websocket)
+                active_sessions["attackers"].append({"teamname": teamname, "websocket": websocket})
             else:
                 await websocket.send("A defender is already logged in.")
                 return None
@@ -55,7 +58,7 @@ async def authenticate(websocket):
         else:
             await websocket.send("Authentication failed. Please check your team name and API key.")
     return None
-
+    
 async def process_command(websocket, session, command):
     parts = command.strip().split()
     command_type = parts[0].lower()
@@ -166,27 +169,49 @@ async def console_input_handler():
         command = await aioconsole.ainput(prompt=">")
         if command == "exit":
             logging.info("Exiting server...")
+            # Attempt to close the defender session if it exists.
+            if active_sessions["defender"]:
+                defender_socket = active_sessions["defender"]["websocket"]
+                await defender_socket.close()
+            # Attempt to close all attacker sessions.
+            for attacker in active_sessions["attackers"]:
+                attacker_socket = attacker["websocket"]
+                await attacker_socket.close()
             break
         elif command == "list":
             logging.info("Active sessions:")
-            for team, _ in active_sessions["attackers"].items():
-                logging.info(f"Attacker: {team}")
+            # Display the defender's session if it exists.
             if active_sessions["defender"]:
-                logging.info(f"Defender: {active_sessions['defender']}")
+                logging.info(f"Defender: {active_sessions['defender']['teamname']}")
+            else:
+                logging.info("No active defender session.")
+                
+            # Display the attackers' sessions.
+            if active_sessions["attackers"]:
+                for attacker in active_sessions["attackers"]:
+                    logging.info(f"Attacker: {attacker['teamname']}")
+            else:
+                logging.info("No active attacker sessions.")
         elif command.startswith("kick"):
             parts = command.split()
             if len(parts) == 2:
                 teamname = parts[1]
-                if teamname in active_sessions["attackers"]:
-                    await active_sessions["attackers"][teamname].close()
-                    logging.info(f"Kicked attacker: {teamname}")
-                elif active_sessions["defender"] == teamname:
-                    await active_sessions["defender"].close()
+                # Kick the defender by team name.
+                if active_sessions["defender"] and active_sessions["defender"]["teamname"] == teamname:
+                    await active_sessions["defender"]["websocket"].close()
+                    active_sessions["defender"] = None
                     logging.info(f"Kicked defender: {teamname}")
+                # Kick an attacker by team name.
+                elif any(attacker["teamname"] == teamname for attacker in active_sessions["attackers"]):
+                    attacker_to_kick = next(attacker for attacker in active_sessions["attackers"] if attacker["teamname"] == teamname)
+                    await attacker_to_kick["websocket"].close()
+                    active_sessions["attackers"].remove(attacker_to_kick)
+                    logging.info(f"Kicked attacker: {teamname}")
                 else:
                     logging.info(f"Team {teamname} not found.")
             else:
                 logging.info("Invalid command syntax. Use 'kick <teamname>'.")
+
 
 async def main():
     parser = argparse.ArgumentParser(description="WebSocket server for competition.")
