@@ -64,7 +64,7 @@ async def process_command(websocket, session, command):
         response = display_scores(session)
     elif command_type in ["receive-prompt", "p"]:
         response = await handle_receive_prompt(websocket, session)
-    elif command_type in ["submit-answer", "a"]:
+    elif command_type in ["submit-answer", "s"]:
         response = await handle_submit_answer(websocket, session, additional_parts)
     elif command_type in ["request-token", "r"]:
         response = await handle_request_token(websocket, session)
