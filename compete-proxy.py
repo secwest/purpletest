@@ -28,11 +28,14 @@ def load_user_data(api_key_file):
     try:
         data = pd.read_csv(api_key_file)
         for _, row in data.iterrows():
-            user_data[row['teamname']] = {'apikey': row['apikey'], 'role': row['role']}
-        logging.info("User data loaded successfully.")
+            teamname = row['teamname']
+            user_data[teamname] = {'apikey': row['apikey'], 'role': row['role']}
+            scores[teamname] = 0  # Initialize score for each team
+        logging.info("User data and initial scores loaded successfully.")
     except Exception as e:
         logging.error(f"Failed to load user data: {e}")
         exit(1)
+
 
 async def authenticate(websocket):
     auth_message = await websocket.recv()
