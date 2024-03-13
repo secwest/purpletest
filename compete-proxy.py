@@ -60,7 +60,7 @@ async def process_command(websocket, session, command):
         response = "Already logged in."
     elif command_type in ["logout", "lo"]:
         response = await handle_logout(websocket, session)
-    elif command_type in ["score", "s"]:
+    elif command_type in ["score"]:
         response = display_scores(session)
     elif command_type in ["receive-prompt", "p"]:
         response = await handle_receive_prompt(websocket, session)
