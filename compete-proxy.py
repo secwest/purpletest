@@ -70,10 +70,10 @@ async def process_command(websocket, session, command):
         response = await handle_request_token(websocket, session)
     elif command_type in ["submit-attack", "a"]:
         response = await handle_submit_attack(websocket, session, additional_parts)
-    elif command_type in ["--version", "-v"]:
+    elif command_type in ["version", "v"]:
         response = "LLM Purple Test Competition CLI Version 1.0"
-    elif command_type in ["--help", "-h"]:
-        response = "Available commands: login(l), logout(lo), score(sc), receive-prompt(p), submit-answer(s), request-token(r), submit-attack(a), --version(-v), --help(-h)"
+    elif command_type in ["help", "h"]:
+        response = "Available commands: login(l), logout(lo), score(sc), receive-prompt(p), submit-answer(s), request-token(r), submit-attack(a), version(v), help(h)"
     else:
         response = "Unknown command or malformed input."
     
