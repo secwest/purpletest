@@ -48,7 +48,7 @@ async def authenticate(websocket):
             # Adjusting for defender to store both team name and websocket
             if session_role == "defender" and not active_sessions["defender"]:
                 active_sessions["defender"] = {"teamname": teamname, "websocket": websocket}
-            # Adjusting for attackers to store a list of dictionaries, each with team name and websocket
+            # Attackers stores a list of dictionaries, each with team name and websocket
             elif session_role == "attacker":
                 active_sessions["attackers"].append({"teamname": teamname, "websocket": websocket})
             else:
