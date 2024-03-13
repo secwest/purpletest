@@ -155,15 +155,53 @@ async def handler(websocket, path):
     else:
         await websocket.send("Authentication failed or not provided.")
 
-def main():
+
+async def console_input_handler():
+    global server_task
+    while True:
+        command = input()
+        if command == "exit":
+            logging.info("Exiting server...")
+            for task in asyncio.all_tasks():
+                task.cancel()
+            if server_task:
+                server_task.cancel()
+            break
+        elif command == "list sessions":
+            logging.info("Active sessions:")
+            for team, ws in sessions_websocket_mapping.items():
+                logging.info(f"Team: {team}, Role: {user_data[team]['role']}")
+        elif command.startswith("kick"):
+            parts = command.split()
+            if len(parts) == 2:
+                teamname = parts[1]
+                if teamname in sessions_websocket_mapping:
+                    await sessions_websocket_mapping[teamname].close()
+                    logging.info(f"Team {teamname} has been kicked off.")
+                else:
+                    logging.info(f"Team {teamname} is not currently connected.")
+            else:
+                logging.info("Invalid command syntax. Use 'kick <teamname>'.")
+        else:
+            logging.info("Unknown command.")
+
+
+async def main():
+    global server_task
     parser = argparse.ArgumentParser(description="WebSocket server for competition.")
     parser.add_argument('--api-key-file', type=validate_file, required=True, help="Path to API key file.")
     parser.add_argument('--port', type=int, default=6789, help="WebSocket server port.")
     args = parser.parse_args()
     load_user_data(args.api_key_file)
-    start_server = websockets.serve(handler, "localhost", args.port)
-    asyncio.get_event_loop().run_until_complete(start_server)
-    asyncio.get_event_loop().run_forever()
+    
+    console_listener_task = asyncio.create_task(console_input_handler())
+    server = await websockets.serve(handler, "localhost", args.port)
+    server_task = server
+
+    await asyncio.gather(server.wait_closed(), console_listener_task)
 
 if __name__ == "__main__":
-    main()
+    try:
+        asyncio.run(main())
+    except asyncio.CancelledError:
+        logging.info("Server shutdown.")
