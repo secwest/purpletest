@@ -157,48 +157,44 @@ async def handler(websocket, path):
 
 
 async def console_input_handler():
-    global server_task
     while True:
-        command = input()
+        command = await aioconsole.ainput(prompt=">")
         if command == "exit":
             logging.info("Exiting server...")
-            for task in asyncio.all_tasks():
-                task.cancel()
-            if server_task:
-                server_task.cancel()
             break
-        elif command == "list sessions":
+        elif command == "list":
             logging.info("Active sessions:")
-            for team, ws in sessions_websocket_mapping.items():
-                logging.info(f"Team: {team}, Role: {user_data[team]['role']}")
+            for team, _ in active_sessions["attackers"].items():
+                logging.info(f"Attacker: {team}")
+            if active_sessions["defender"]:
+                logging.info(f"Defender: {active_sessions['defender']}")
         elif command.startswith("kick"):
             parts = command.split()
             if len(parts) == 2:
                 teamname = parts[1]
-                if teamname in sessions_websocket_mapping:
-                    await sessions_websocket_mapping[teamname].close()
-                    logging.info(f"Team {teamname} has been kicked off.")
+                if teamname in active_sessions["attackers"]:
+                    await active_sessions["attackers"][teamname].close()
+                    logging.info(f"Kicked attacker: {teamname}")
+                elif active_sessions["defender"] == teamname:
+                    await active_sessions["defender"].close()
+                    logging.info(f"Kicked defender: {teamname}")
                 else:
-                    logging.info(f"Team {teamname} is not currently connected.")
+                    logging.info(f"Team {teamname} not found.")
             else:
                 logging.info("Invalid command syntax. Use 'kick <teamname>'.")
-        else:
-            logging.info("Unknown command.")
-
 
 async def main():
-    global server_task
     parser = argparse.ArgumentParser(description="WebSocket server for competition.")
     parser.add_argument('--api-key-file', type=validate_file, required=True, help="Path to API key file.")
     parser.add_argument('--port', type=int, default=6789, help="WebSocket server port.")
     args = parser.parse_args()
-    load_user_data(args.api_key_file)
     
-    console_listener_task = asyncio.create_task(console_input_handler())
-    server = await websockets.serve(handler, "localhost", args.port)
-    server_task = server
-
-    await asyncio.gather(server.wait_closed(), console_listener_task)
+    load_user_data(args.api_key_file)
+    server = websockets.serve(handler, "localhost", args.port)
+    
+    console_task = asyncio.create_task(console_input_handler())
+    
+    await asyncio.gather(server, console_task)
 
 if __name__ == "__main__":
     try:
