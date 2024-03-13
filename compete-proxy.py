@@ -59,15 +59,15 @@ async def process_command(websocket, session, command):
     if command_type in ["login", "l"]:
         response = "Already logged in."
     elif command_type in ["logout", "lo"]:
-        response = await handle_logout(session, websocket)
+        response = await handle_logout(websocket, session)
     elif command_type in ["score", "s"]:
         response = display_scores(session)
     elif command_type in ["receive-prompt", "p"]:
-        response = await handle_receive_prompt(session)
+        response = await handle_receive_prompt(websocket, session)
     elif command_type in ["submit-answer", "a"]:
-        response = await handle_submit_answer(session, additional_parts)
+        response = await handle_submit_answer(websocket, session, additional_parts)
     elif command_type in ["request-token", "r"]:
-        response = await handle_request_token(session)
+        response = await handle_request_token(websocket, session)
     elif command_type in ["submit-attack", "a"]:
         response = await handle_submit_attack(session, additional_parts)
     elif command_type in ["--version", "-v"]:
@@ -79,54 +79,66 @@ async def process_command(websocket, session, command):
     
     await websocket.send(response)
 
-async def handle_logout(session, websocket):
+async def handle_logout(websocket, session):
     if session["role"] == "defender":
         active_sessions["defender"] = None
     else:
         active_sessions["attackers"].remove(websocket)
     return "Logged out successfully."
 
-def display_scores(session):
+def display_scores(websocket, session):
     score = scores.get(session['teamname'], 0)
     return f"{session['teamname']} score: {score}"
 
-async def handle_receive_prompt(session):
+async def handle_receive_prompt(websocket, session):
     if session['role'] != "defender":
         return "ERROR: Only defenders can receive prompts."
     prompt = await prompt_queue.get()
     return prompt
 
-async def handle_submit_answer(session, answer_parts):
+async def handle_submit_answer(websocket, session, answer_parts):
     if session['role'] != "defender":
         return "ERROR: Only defenders can submit answers."
     answer = " ".join(answer_parts)
     scores[session['teamname']] = scores.get(session['teamname'], 0) + len(answer) % 10  # Simplified scoring
-    return f"Answer received: '{answer}'. Score updated."
+    return f"Answer received: '{answer}'. Scoring init."
 
-async def handle_request_token(session):
+async def handle_request_token(websocket, session):
     if session['role'] != "attacker":
         return "ERROR: Only attackers can request tokens."
     return "Token generated. (Placeholder)"
 
-async def handle_submit_attack(session, parts):
+
+async def handle_submit_attack(websocket, session, parts):
     if session['role'] != "attacker":
         return "ERROR: Only attackers can submit attacks."
-    if not parts or "--attach-to" not in parts or len(parts) < 3:
-        return "Invalid command syntax for submit-attack."
+    attack_query, prefix, postfix, attach_to = None, None, None, None
+    if "--prefix" in parts or "--postfix" in parts:
+        if "--attach-to" not in parts:
+            return "ERROR: --attach-to must be specified with --prefix or --postfix."
+        for i, part in enumerate(parts):
+            if part == "--prefix":
+                prefix = parts[i + 1] if i + 1 < len(parts) else None
+            elif part == "--postfix":
+                postfix = parts[i + 1] if i + 1 < len(parts) else None
+            elif part == "--attach-to":
+                attach_to = parts[i + 1] if i + 1 < len(parts) else None
+        if not prefix and not postfix:
+            return "ERROR: Either --prefix or --postfix must be specified."
+    else:
+        if len(parts) == 1:
+            attack_query = parts[0]
+        else:
+            return "ERROR: Invalid command syntax. Specify either an attack or use --prefix/--postfix with --attach-to."
 
-    prefix, postfix, attach_to = None, None, None
-    for i, part in enumerate(parts):
-        if part == "--prefix":
-            prefix = parts[i + 1] if i + 1 < len(parts) else None
-        elif part == "--postfix":
-            postfix = parts[i + 1] if i + 1 < len(parts) else None
-        elif part == "--attach-to":
-            attach_to = parts[i + 1] if i + 1 < len(parts) else None
-
-    if not attach_to or (not prefix and not postfix):
-        return "Invalid attack command. Must specify --attach-to with either --prefix or --postfix."
     
-    return f"Attack submitted with prefix: '{prefix}', postfix: '{postfix}', attached to: {attach_to}."
+    if attack_query:
+        insert_direct_attack(websocket, session, attack_query)
+        return f"Direct attack submitted: {attack_query}"
+    else:
+        insert_attach_queue(websocket, session, prefix, postfix, attach-to)
+        return f"Attack submitted with prefix: '{prefix}', postfix: '{postfix}', attached to: {attach_to}."
+
 
 async def handler(websocket, path):
     session = await authenticate(websocket)
