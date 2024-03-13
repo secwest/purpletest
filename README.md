@@ -7,3 +7,10 @@ dsmap.py - recursively map and print out dataset benchmark field structure with 
 
 listds.py - list huggingface datasets
 
+## Usage
+
+To make the proxy start run the following command:
+
+```bash
+python3 compete-proxy.py --api-key-file ./csvfiles/users.csv
+```

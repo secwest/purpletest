@@ -30,7 +30,7 @@ def load_user_data(api_key_file):
         for _, row in data.iterrows():
             teamname = row['teamname']
             user_data[teamname] = {'apikey': row['apikey'], 'role': row['role']}
-            scores[teamname] = 0  # Initialize score for each team
+            scores[teamname] = 0  # Initialize score for each team            
         logging.info("User data and initial scores loaded successfully.")
     except Exception as e:
         logging.error(f"Failed to load user data: {e}")
