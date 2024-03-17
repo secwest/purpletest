@@ -398,7 +398,7 @@ async def handle_receive_prompt(websocket, session, file_path):
             }
 
             # Use the utility function to send the prompt text to the attacker
-            await safe_websocket_send(websocket, json.dumps({"id": prompt_id, "prompt": prompt_text}))
+            await safe_websocket_send(websocket, prompt_text)
         else:
             await safe_websocket_send(websocket, "ERROR: No more prompts available.")
     except StopIteration:
