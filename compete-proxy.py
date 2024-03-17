@@ -124,7 +124,7 @@ async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, sco
 
 
 
-def exact_match_evaluator(submitted_answer, correct_answers):
+def exact_match_evaluator(submitted_answer, correct_answers, scoring_data):
     return int(submitted_answer.strip() in [ans.strip() for ans in correct_answers])
 
 def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
@@ -136,7 +136,7 @@ def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
     except (ValueError, TypeError):
         return 0
 
-def f1_score_evaluator(submitted_answer, correct_answers):
+def f1_score_evaluator(submitted_answer, correct_answers, scoring_data):
     # Assuming the submitted answer and correct answers are tokenized into lists
     # This is a simplified example. Real usage might require adjustment.
     submitted_tokens = submitted_answer.split()
@@ -146,7 +146,7 @@ def f1_score_evaluator(submitted_answer, correct_answers):
     binary_correct = [1 for _ in correct_tokens[0]]
     return f1_score(binary_correct, binary_submitted, average='binary')
 
-def bleu_score_evaluator(submitted_answer, correct_answers):
+def bleu_score_evaluator(submitted_answer, correct_answers, scoring_data):
     submitted_tokens = submitted_answer.split()
     correct_tokens_lists = [[ans.split()] for ans in correct_answers]
     smoothing = SmoothingFunction().method1
@@ -181,7 +181,7 @@ def spearman_correlation_evaluator(submitted_answer, correct_answers, scoring_da
     return correlation
 
 
-async def handle_submit_answer(websocket, index, submitted_answer):
+async def handle_submit_answer(websocket, index, submitted_answer, correct_andswers, scoring_data):
     # Ensure the function is called with the correct parameters:
     # `websocket` - the WebSocket connection of the defender
     # `index` - the index of the prompt being answered
