@@ -275,7 +275,6 @@ def prompt_generator(file_path, chunk_size=1024):
                 if line.startswith('Entry:'):
                     _, entry_json = line.split('Entry: ', 1)
                     entry = json.loads(entry_json.strip())
-                    # Adjust these fields based on your dataset's structure
                     id = entry.get("idx")  # Assuming each entry has an 'idx' for ID
                     prompt = entry.get("prompt")  # The prompt text
                     template = entry.get("template")  # The template, if applicable
