@@ -275,6 +275,7 @@ def prompt_generator(file_path, chunk_size=1024):
                 if line.startswith('Entry:'):
                     _, entry_json = line.split('Entry: ', 1)
                     entry = json.loads(entry_json.strip())
+                    # Adjust these fields based on your dataset's structure
                     id = entry.get("idx")  # Assuming each entry has an 'idx' for ID
                     prompt = entry.get("prompt")  # The prompt text
                     template = entry.get("template")  # The template, if applicable
@@ -488,6 +489,14 @@ async def console_input_handler():
                     logging.info(f"Team {teamname} not found.")
             else:
                 logging.info("Invalid command syntax. Use 'kick <teamname>'.")
+
+
+# Utility function to safely send messages through WebSocket
+async def safe_websocket_send(websocket, message):
+    try:
+        await websocket.send(message)
+    except Exception as e:
+        logging.error(f"WebSocket send error: {str(e)}")
 
 
 async def main():
