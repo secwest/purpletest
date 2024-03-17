@@ -11,6 +11,9 @@ import logging
 from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
 from scipy.stats import pearsonr, spearmanr
 from nltk.translate.bleu_score import sentence_bleu
+import json
+import threading
+from collections import deque
 
 
 # Setup logging
@@ -259,39 +262,65 @@ async def handle_submit_answer(websocket, index, submitted_answer):
             logging.error(f"Error sending error message to client: {str(send_error)}")
 
 
-    
+# Assuming direct_attacks_queue and attach_queue are accessed by multiple threads
+direct_attacks_queue = deque()
+attach_queue = {}
+queue_lock = threading.Lock()
+
+def generate_direct_attack_prompt():
+    """Safely generates prompt data from the next direct attack in the queue."""
+    with queue_lock:
+        if not direct_attacks_queue:
+            return None
+        attack = direct_attacks_queue.popleft()
+    return attack['id'], attack['prompt'], attack['data'], attack['template'], {}
 
 def prompt_generator(file_path, chunk_size=1024):
-    """A generator that yields ID, prompt, and template from a file, reading in chunks."""
-    buffer = ''
-    with open(file_path, 'r') as file:
-        while True:
-            chunk = file.read(chunk_size)
-            if not chunk:  # End of file
-                break
-            buffer += chunk
-            lines = buffer.split('\n')
-            for i, line in enumerate(lines[:-1]):  # Process all but the last line
-                if line.startswith('Entry:'):
-                    _, entry_json = line.split('Entry: ', 1)
-                    entry = json.loads(entry_json.strip())
-                    # Adjust these fields based on your dataset's structure
-                    id = entry.get("idx")  # Assuming each entry has an 'idx' for ID
-                    prompt = entry.get("prompt")  # The prompt text
-                    template = entry.get("template")  # The template, if applicable
-                    yield id, prompt, template
-            buffer = lines[-1]  # Save the last line in case it's incomplete
+    """Safely yields ID, prompt, template, and optional attack info from direct attacks or a file."""
+    # Try to generate a prompt from the direct attacks queue
+    direct_attack_prompt = generate_direct_attack_prompt()
+    if direct_attack_prompt:
+        yield direct_attack_prompt
 
-    # Process any remaining buffer content after reading the last chunk
+    buffer = ''
+    try:
+        with open(file_path, 'r') as file:
+            while True:
+                chunk = file.read(chunk_size)
+                if not chunk:
+                    break
+                buffer += chunk
+                lines = buffer.split('\n')
+                for line in lines[:-1]:
+                    if line.startswith('Entry:'):
+                        _, entry_json = line.split('Entry: ', 1)
+                        entry = json.loads(entry_json.strip())
+                        id, prompt, data, template = entry["idx"], entry["prompt"], entry.get("data", {}), entry["template"]
+
+                        with queue_lock:
+                            attach_mods = attach_queue.get(id, {})
+                        prefix = attach_mods.get('prefix', '')
+                        postfix = attach_mods.get('postfix', '')
+                        modified_prompt = f"{prefix} {prompt} {postfix}".strip()
+
+                        attacker_info = {'teamname': attach_mods.get('teamname', '')} if attach_mods else {}
+
+                        yield id, modified_prompt, data, template, attacker_info
+                buffer = lines[-1]
+    except FileNotFoundError as e:
+        logging.error(f"File not found: {e}")
+    except json.JSONDecodeError as e:
+        logging.error(f"Error parsing JSON: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error: {e}")
+
+    # Check for any remaining content
     if buffer.startswith('Entry:'):
         _, entry_json = buffer.split('Entry: ', 1)
         entry = json.loads(entry_json.strip())
-    
-        id = entry.get("idx")  # Assuming each entry has an 'idx' for ID
-        prompt = entry.get("prompt")  # The prompt text
-        data = entry.get("data")  # The template, if applicable
-        template = entry.get("template")  # The template, if applicable
-        yield id, prompt, data, template
+        yield entry["idx"], entry["prompt"], entry.get("data", {}), entry["template"], {}
+
+
 
 async def handle_receive_prompt(websocket, session):
     try:
@@ -443,7 +472,7 @@ async def handle_submit_attack(websocket, session, parts):
         insert_direct_attack(websocket, session, attack_query)
         return f"Direct attack submitted: {attack_query}"
     else:
-        insert_attach_queue(websocket, session, prefix, postfix, attach-to)
+        insert_attack_queue(websocket, session, prefix, postfix, attach-to)
         return f"Attack submitted with prefix: '{prefix}', postfix: '{postfix}', attached to: {attach_to}."
 
 
