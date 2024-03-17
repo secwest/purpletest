@@ -209,41 +209,54 @@ async def handle_submit_answer(websocket, index, submitted_answer):
     # `submitted_answer` - the answer provided by the defender
 
     # Check if the prompt exists and has not yet been answered
-   if index not in unanswered_prompts:
-        return "ERROR: Prompt index not found or already answered."
+   
+   try:
+        if index not in unanswered_prompts:
+            await websocket.send("ERROR: Prompt index not found or already answered.")
+            return
 
-    prompt_info = unanswered_prompts[index]
-    evaluator_type = prompt_info['template']['evaluator_type']
-    scoring_data = prompt_info['template'].get('scoring_data', {})  # Scoring data might not always be present
-    answer_fields = prompt_info['template'].get('answer_fields', [])  # Fields to extract the correct answer(s) from
+        prompt_info = unanswered_prompts.get(index, {})
+        evaluator_type = prompt_info.get('template', {}).get('evaluator_type', 'unknown')
+        scoring_data = prompt_info.get('template', {}).get('scoring_data', {})
+        answer_fields = prompt_info.get('template', {}).get('answer_fields', [])
 
-    # Extract correct answers based on the specified fields in 'answer_fields'
-    correct_answers = [prompt_info['data'][field] for field in answer_fields if field in prompt_info['data']]
+        # Ensure correct_answers extraction logic handles missing data gracefully
+        correct_answers = [prompt_info['data'].get(field, '') for field in answer_fields]
 
-    # Handle case where correct answers could not be extracted
-    if not correct_answers:
-        logging.error(f"No correct answers found for prompt index {index}. Check 'answer_fields' in template.")
-        return "ERROR: No correct answers available for evaluation."
+        if not correct_answers:
+            logging.error(f"No correct answers found for prompt index {index}. Check 'answer_fields' in template.")
+            await websocket.send("ERROR: No correct answers available for evaluation.")
+            return
 
-    # Call the specific evaluator based on `evaluator_type`
-    score = await evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data)
+        score = await evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data)
+        defender_feedback = f"Index: {index}, Answer received: '{submitted_answer}'. Score: {score}."
 
-    defender_feedback = f"Index: {index}, Answer received: '{submitted_answer}'. Score: {score}."
-    await websocket.send(defender_feedback)
+        await websocket.send(defender_feedback)
 
-    # Feedback to attacker if present
-    if 'attacks' in prompt_info:
-        for attack in prompt_info['attacks']:
-            attacker_websocket = next((attacker['websocket'] for attacker in active_sessions["attackers"] if attacker['teamname'] == attack['teamname']), None)
-            if attacker_websocket:
-                await attacker_websocket.send(defender_feedback + " " + json.dumps(attack))
+        # Feedback to attacker if present
+        if 'attacks' in prompt_info:
+            for attack in prompt_info['attacks']:
+                attacker_team_name = attack.get('teamname')
+                attacker_session = active_sessions["attackers"].get(attacker_team_name)
+                if attacker_session:
+                    attacker_websocket = attacker_session.get('websocket')
+                    if attacker_websocket:
+                        try:
+                            await attacker_websocket.send(defender_feedback + " " + json.dumps(attack))
+                        except Exception as e:
+                            logging.error(f"Error sending feedback to attacker {attacker_team_name}: {str(e)}")
 
-    logging.info(defender_feedback + " " + json.dumps(prompt_info))
-    
-    # Remove the prompt from the list of unanswered prompts
-    del unanswered_prompts[index]
+        logging.info(defender_feedback + " " + json.dumps(prompt_info))
+        
+        # Safe deletion of the prompt from the global structure
+        unanswered_prompts.pop(index, None)
 
-    return defender_feedback
+    except Exception as e:
+        logging.error(f"Error handling submit answer for index {index}: {str(e)}")
+        try:
+            await websocket.send("ERROR: An internal error occurred while processing your submission.")
+        except Exception as send_error:
+            logging.error(f"Error sending error message to client: {str(send_error)}")
 
 
     
@@ -484,6 +497,7 @@ async def main():
         # Set default value for dataset templates file path
     parser.add_argument('--dataset-templates', type=validate_file, required=False, default='./ds-templates.jsonl', help="Path to dataset templates file.")
     parser.add_argument('--port', type=int, default=6789, help="WebSocket server port.")
+    parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], help="Set the logging level")
     args = parser.parse_args()
     
     # Load user data and dataset templates, using default path if not provided
