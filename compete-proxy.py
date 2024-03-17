@@ -508,6 +508,8 @@ async def main():
     parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], help="Set the logging level")
     args = parser.parse_args()
     
+    logging.basicConfig(level=getattr(logging, args.log_level.upper()), format='%(asctime)s - %(levelname)s - %(message)s')
+
     # Load user data and dataset templates, using default path if not provided
     load_user_data(args.api_key_file)
     load_dataset_templates(args.dataset_templates)
