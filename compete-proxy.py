@@ -40,23 +40,27 @@ def load_dataset_templates(file_path):
     try:
         with open(file_path, 'r') as file:
             for line in file:
-                template = json.loads(line.strip())
-                key = f"{template['dataset']}_{template['config']}"
+                try:
+                    template = json.loads(line.strip())
+                    key = f"{template.get('dataset', 'unknown_dataset')}_{template.get('config', 'default_config')}"
 
-                # Assuming 'answer_fields' can now be a list of fields
-                # and 'token_join_fields' specifies how to join tokens for evaluation
-                dataset_templates[key] = {
-                    "template": template["template"],
-                    "answer_fields": template.get("answer_fields", []),  # List of fields
-                    "answer_type": template["answer_type"],
-                    "evaluator_type": template["evaluator_type"],
-                    "token_join_fields": template.get("token_join_fields", {}),  # How to join tokens
-                    "scoring_data": template.get("scoring_data", {})  # Includes weights or other scoring parameters
-                }
+                    # Safe defaulting in case of missing fields in a template
+                    dataset_templates[key] = {
+                        "template": template.get("template", "No template provided."),
+                        "answer_fields": template.get("answer_fields", []),
+                        "answer_type": template.get("answer_type", "unknown"),
+                        "evaluator_type": template.get("evaluator_type", "unknown"),
+                        "token_join_fields": template.get("token_join_fields", {}),
+                        "scoring_data": template.get("scoring_data", {})
+                    }
+                except json.JSONDecodeError as e:
+                    logging.error(f"Error parsing JSON in line: {line}. Error: {e}")
+                except Exception as e:
+                    logging.error(f"Unexpected error processing line: {line}. Error: {e}")
     except FileNotFoundError:
         logging.error(f"The file {file_path} was not found.")
-    except json.JSONDecodeError as e:
-        logging.error(f"Error parsing JSON: {e}")
+    except Exception as e:
+        logging.error(f"Unexpected error opening file: {file_path}. Error: {e}")
 
 
 # Global structure to store prompts and related information
