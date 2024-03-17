@@ -181,30 +181,6 @@ def spearman_correlation_evaluator(submitted_answer, correct_answers, scoring_da
     return correlation
 
 
-async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data):
-    # Placeholder for evaluator dispatcher logic
-    if evaluator_type == "exact_match":
-        return exact_match_evaluator(submitted_answer, correct_answers)
-    elif evaluator_type == "numeric":
-        return numeric_evaluator(submitted_answer, correct_answers, scoring_data)
-    # Add other evaluators as necessary
-    return 0
-
-def exact_match_evaluator(submitted_answer, correct_answers):
-    # Example of a simple exact match evaluator
-    return 1 if submitted_answer in correct_answers else 0
-
-def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
-    # Placeholder for a numeric comparison evaluator
-    # This could involve comparing the submitted_answer to a numeric range or value
-    try:
-        submitted_value = float(submitted_answer)
-        correct_value = float(correct_answers[0])  # Assuming a single correct numeric answer
-        tolerance = scoring_data.get('tolerance', 0)  # Allow for some tolerance in the numeric comparison
-        return 1 if abs(submitted_value - correct_value) <= tolerance else 0
-    except (ValueError, TypeError):
-        return 0
-    
 async def handle_submit_answer(websocket, index, submitted_answer):
     # Ensure the function is called with the correct parameters:
     # `websocket` - the WebSocket connection of the defender
