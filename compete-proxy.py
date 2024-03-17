@@ -85,7 +85,7 @@ unanswered_prompts = {}
 #         },
 #         {
 #             "attack_type": "direct",
-#             "modification": "Modification to the main prompt"
+#             "modification": "Main prompt"
 #         }
 #     ],
 #     "attacker_team": "AttackerTeamName"
