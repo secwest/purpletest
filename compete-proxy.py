@@ -324,12 +324,6 @@ def prompt_generator(directory_path, chunk_size=1024):
                 yield entry["idx"], entry["prompt"], entry.get("data", {}), entry["template"], {}
 
 
-    # Check for any remaining content
-    if buffer.startswith('Entry:'):
-        _, entry_json = buffer.split('Entry: ', 1)
-        entry = json.loads(entry_json.strip())
-        yield entry["idx"], entry["prompt"], entry.get("data", {}), entry["template"], {}
-
 
 
 async def handle_receive_prompt(websocket, session):
