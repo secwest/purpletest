@@ -24,6 +24,39 @@ def validate_file(file_path):
         raise argparse.ArgumentTypeError(f"The file {file_path} does not exist.")
     return file_path
 
+def prompt_generator(file_path, chunk_size=1024):
+    """A generator that yields ID, prompt, and template from a file, reading in chunks."""
+    buffer = ''
+    with open(file_path, 'r') as file:
+        while True:
+            chunk = file.read(chunk_size)
+            if not chunk:  # End of file
+                break
+            buffer += chunk
+            lines = buffer.split('\n')
+            for i, line in enumerate(lines[:-1]):  # Process all but the last line
+                if line.startswith('Entry:'):
+                    _, entry_json = line.split('Entry: ', 1)
+                    entry = json.loads(entry_json.strip())
+                    # Adjust these fields based on your dataset's structure
+                    id = entry.get("idx")  # Assuming each entry has an 'idx' for ID
+                    prompt = entry.get("prompt")  # The prompt text
+                    template = entry.get("template")  # The template, if applicable
+                    yield id, prompt, template
+            buffer = lines[-1]  # Save the last line in case it's incomplete
+
+    # Process any remaining buffer content after reading the last chunk
+    if buffer.startswith('Entry:'):
+        _, entry_json = buffer.split('Entry: ', 1)
+        entry = json.loads(entry_json.strip())
+        # Adjust these fields based on your dataset's structure
+        id = entry.get("idx")  # Assuming each entry has an 'idx' for ID
+        prompt = entry.get("prompt")  # The prompt text
+        template = entry.get("template")  # The template, if applicable
+        yield id, prompt, template
+
+
+
 def load_user_data(api_key_file):
     try:
         data = pd.read_csv(api_key_file)
