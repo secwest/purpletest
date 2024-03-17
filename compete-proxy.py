@@ -6,6 +6,12 @@ import pandas as pd
 import websockets
 import aioconsole
 from pathlib import Path
+import numpy as np
+import logging
+from sklearn.metrics import f1_score, precision_score, recall_score, accuracy_score
+from scipy.stats import pearsonr, spearmanr
+from nltk.translate.bleu_score import sentence_bleu
+
 
 # Setup logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,6 +29,215 @@ def validate_file(file_path):
     if not Path(file_path).is_file():
         raise argparse.ArgumentTypeError(f"The file {file_path} does not exist.")
     return file_path
+
+def load_dataset_templates(file_path):
+    """
+    Loads dataset templates from a JSON file, parsing each line as a JSON object.
+    Stores configurations in `dataset_templates`, indexed by dataset name and config.
+    This updated structure supports multiple answer fields, token join fields, and 
+    a complex scoring data type that includes weights for different answers.
+    """
+    try:
+        with open(file_path, 'r') as file:
+            for line in file:
+                template = json.loads(line.strip())
+                key = f"{template['dataset']}_{template['config']}"
+
+                # Assuming 'answer_fields' can now be a list of fields
+                # and 'token_join_fields' specifies how to join tokens for evaluation
+                dataset_templates[key] = {
+                    "template": template["template"],
+                    "answer_fields": template.get("answer_fields", []),  # List of fields
+                    "answer_type": template["answer_type"],
+                    "evaluator_type": template["evaluator_type"],
+                    "token_join_fields": template.get("token_join_fields", {}),  # How to join tokens
+                    "scoring_data": template.get("scoring_data", {})  # Includes weights or other scoring parameters
+                }
+    except FileNotFoundError:
+        logging.error(f"The file {file_path} was not found.")
+    except json.JSONDecodeError as e:
+        logging.error(f"Error parsing JSON: {e}")
+
+
+# Global structure to store prompts and related information
+unanswered_prompts = {}
+
+# Example structure for an entry in `unanswered_prompts`
+# "prompt_index": {
+#     "prompt": "The actual prompt text",
+#     "data": {...},  # Data related to the prompt
+#     "template": {...},    # Scoring template
+#     "attacks": [  # Supports multiple modifications (prefix, postfix, direct)
+#         {
+#             "attack_type": "prefix",
+#             "modification": "The prefix modification"
+#         },
+#         {
+#             "attack_type": "postfix",
+#             "modification": "The postfix modification"
+#         },
+#         {
+#             "attack_type": "direct",
+#             "modification": "Modification to the main prompt"
+#         }
+#     ],
+#     "attacker_team": "AttackerTeamName"
+# }
+
+async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data):
+    """Dispatches the submitted answer to the appropriate evaluator."""
+    evaluators = {
+        "exact_match": exact_match_evaluator,
+        "numeric": numeric_evaluator,
+        "f1_score": f1_score_evaluator,
+        "bleu_score": bleu_score_evaluator,
+        "accuracy": accuracy_evaluator,
+        "precision": precision_evaluator,
+        "recall": recall_evaluator,
+        "pearson_correlation": pearson_correlation_evaluator,
+        "spearman_correlation": spearman_correlation_evaluator
+    }
+
+    evaluator = evaluators.get(evaluator_type)
+    if evaluator:
+        # Handle evaluators expecting different parameters gracefully
+        if evaluator_type in ["exact_match", "f1_score", "bleu_score"]:
+            return evaluator(submitted_answer, correct_answers)
+        elif evaluator_type in ["numeric", "accuracy", "precision", "recall", "pearson_correlation", "spearman_correlation"]:
+            return evaluator(submitted_answer, correct_answers, scoring_data)
+    else:
+        logging.error(f"Evaluator type '{evaluator_type}' not supported.")
+        return 0
+
+
+
+
+def exact_match_evaluator(submitted_answer, correct_answers):
+    """Checks if submitted answer exactly matches any of the correct answers."""
+    return int(submitted_answer in correct_answers)
+
+def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
+    """Evaluates numeric answers with optional tolerance."""
+    try:
+        submitted_value = float(submitted_answer)
+        correct_value = float(correct_answers[0])
+        tolerance = scoring_data.get('tolerance', 0)
+        return int(abs(submitted_value - correct_value) <= tolerance)
+    except (ValueError, TypeError):
+        return 0
+
+def f1_score_evaluator(submitted_answer, correct_answers):
+    """Computes the F1 score for the submitted answer against the correct answers."""
+    # Tokenization or splitting should be handled as needed for your specific use case
+    submitted_tokens = submitted_answer.split()
+    correct_tokens = [ans.split() for ans in correct_answers]
+    scores = [f1_score([correct], [submitted_tokens], average='macro') for correct in correct_tokens]
+    return max(scores)
+
+def bleu_score_evaluator(submitted_answer, correct_answers):
+    """Calculates the BLEU score for the submitted answer against the correct answers."""
+    # Tokenization or splitting should be handled as needed for your specific use case
+    submitted_tokens = submitted_answer.split()
+    correct_tokens = [ans.split() for ans in correct_answers]
+    score = sentence_bleu(correct_tokens, submitted_tokens)
+    return score
+
+def accuracy_evaluator(submitted_answer, correct_answers):
+    """Calculates accuracy assuming the submitted answer is among the correct answers."""
+    return accuracy_score(correct_answers, [submitted_answer])
+
+def precision_evaluator(submitted_answer, correct_answers):
+    """Calculates precision for classification tasks."""
+    return precision_score(correct_answers, [submitted_answer], average='macro')
+
+def recall_evaluator(submitted_answer, correct_answers):
+    """Calculates recall for classification tasks."""
+    return recall_score(correct_answers, [submitted_answer], average='macro')
+
+def pearson_correlation_evaluator(submitted_answer, correct_answers):
+    """Evaluates Pearson correlation between submitted and correct answers."""
+    submitted_value = float(submitted_answer)
+    correct_values = [float(ans) for ans in correct_answers]
+    correlation, _ = pearsonr(correct_values, [submitted_value])
+    return correlation
+
+def spearman_correlation_evaluator(submitted_answer, correct_answers):
+    """Evaluates Spearman correlation between submitted and correct answers."""
+    submitted_value = float(submitted_answer)
+    correct_values = [float(ans) for ans in correct_answers]
+    correlation, _ = spearmanr(correct_values, [submitted_value])
+    return correlation
+
+
+async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data):
+    # Placeholder for evaluator dispatcher logic
+    if evaluator_type == "exact_match":
+        return exact_match_evaluator(submitted_answer, correct_answers)
+    elif evaluator_type == "numeric":
+        return numeric_evaluator(submitted_answer, correct_answers, scoring_data)
+    # Add other evaluators as necessary
+    return 0
+
+def exact_match_evaluator(submitted_answer, correct_answers):
+    # Example of a simple exact match evaluator
+    return 1 if submitted_answer in correct_answers else 0
+
+def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
+    # Placeholder for a numeric comparison evaluator
+    # This could involve comparing the submitted_answer to a numeric range or value
+    try:
+        submitted_value = float(submitted_answer)
+        correct_value = float(correct_answers[0])  # Assuming a single correct numeric answer
+        tolerance = scoring_data.get('tolerance', 0)  # Allow for some tolerance in the numeric comparison
+        return 1 if abs(submitted_value - correct_value) <= tolerance else 0
+    except (ValueError, TypeError):
+        return 0
+    
+async def handle_submit_answer(websocket, index, submitted_answer):
+    # Ensure the function is called with the correct parameters:
+    # `websocket` - the WebSocket connection of the defender
+    # `index` - the index of the prompt being answered
+    # `submitted_answer` - the answer provided by the defender
+
+    # Check if the prompt exists and has not yet been answered
+   if index not in unanswered_prompts:
+        return "ERROR: Prompt index not found or already answered."
+
+    prompt_info = unanswered_prompts[index]
+    evaluator_type = prompt_info['template']['evaluator_type']
+    scoring_data = prompt_info['template'].get('scoring_data', {})  # Scoring data might not always be present
+    answer_fields = prompt_info['template'].get('answer_fields', [])  # Fields to extract the correct answer(s) from
+
+    # Extract correct answers based on the specified fields in 'answer_fields'
+    correct_answers = [prompt_info['data'][field] for field in answer_fields if field in prompt_info['data']]
+
+    # Handle case where correct answers could not be extracted
+    if not correct_answers:
+        logging.error(f"No correct answers found for prompt index {index}. Check 'answer_fields' in template.")
+        return "ERROR: No correct answers available for evaluation."
+
+    # Call the specific evaluator based on `evaluator_type`
+    score = await evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data)
+
+    defender_feedback = f"Index: {index}, Answer received: '{submitted_answer}'. Score: {score}."
+    await websocket.send(defender_feedback)
+
+    # Feedback to attacker if present
+    if 'attacks' in prompt_info:
+        for attack in prompt_info['attacks']:
+            attacker_websocket = next((attacker['websocket'] for attacker in active_sessions["attackers"] if attacker['teamname'] == attack['teamname']), None)
+            if attacker_websocket:
+                await attacker_websocket.send(defender_feedback + " " + json.dumps(attack))
+
+    logging.info(defender_feedback + " " + json.dumps(prompt_info))
+    
+    # Remove the prompt from the list of unanswered prompts
+    del unanswered_prompts[index]
+
+    return defender_feedback
+
+
+    
 
 def prompt_generator(file_path, chunk_size=1024):
     """A generator that yields ID, prompt, and template from a file, reading in chunks."""
@@ -49,12 +264,20 @@ def prompt_generator(file_path, chunk_size=1024):
     if buffer.startswith('Entry:'):
         _, entry_json = buffer.split('Entry: ', 1)
         entry = json.loads(entry_json.strip())
-        # Adjust these fields based on your dataset's structure
+    
         id = entry.get("idx")  # Assuming each entry has an 'idx' for ID
         prompt = entry.get("prompt")  # The prompt text
+        data = entry.get("data")  # The template, if applicable
         template = entry.get("template")  # The template, if applicable
-        yield id, prompt, template
+        yield id, prompt, data, template
 
+async def handle_receive_prompt(websocket, session):
+    try:
+        prompt = next(prompts)  # Get the next prompt from the generator
+        return prompt['prompt']
+    except StopIteration:
+        return "ERROR: No more prompts available."
+    
 
 
 def load_user_data(api_key_file):
@@ -249,10 +472,16 @@ async def console_input_handler():
 async def main():
     parser = argparse.ArgumentParser(description="WebSocket server for competition.")
     parser.add_argument('--api-key-file', type=validate_file, required=True, help="Path to API key file.")
+        # Set default value for dataset templates file path
+    parser.add_argument('--dataset-templates', type=validate_file, required=False, default='./ds-templates.jsonl', help="Path to dataset templates file.")
     parser.add_argument('--port', type=int, default=6789, help="WebSocket server port.")
     args = parser.parse_args()
     
+    # Load user data and dataset templates, using default path if not provided
     load_user_data(args.api_key_file)
+    load_dataset_templates(args.dataset_templates)
+
+
     server = websockets.serve(handler, "localhost", args.port)
     
     console_task = asyncio.create_task(console_input_handler())
