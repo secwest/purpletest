@@ -124,7 +124,7 @@ async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, sco
 
 
 
-def exact_match_evaluator(submitted_answer, correct_answers, scoring_data):
+def exact_match_evaluator(submitted_answer, correct_answers):
     return int(submitted_answer.strip() in [ans.strip() for ans in correct_answers])
 
 def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
@@ -136,7 +136,7 @@ def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
     except (ValueError, TypeError):
         return 0
 
-def f1_score_evaluator(submitted_answer, correct_answers, scoring_data):
+def f1_score_evaluator(submitted_answer, correct_answers):
     # Assuming the submitted answer and correct answers are tokenized into lists
     # This is a simplified example. Real usage might require adjustment.
     submitted_tokens = submitted_answer.split()
@@ -146,7 +146,7 @@ def f1_score_evaluator(submitted_answer, correct_answers, scoring_data):
     binary_correct = [1 for _ in correct_tokens[0]]
     return f1_score(binary_correct, binary_submitted, average='binary')
 
-def bleu_score_evaluator(submitted_answer, correct_answers, scoring_data):
+def bleu_score_evaluator(submitted_answer, correct_answers):
     submitted_tokens = submitted_answer.split()
     correct_tokens_lists = [[ans.split()] for ans in correct_answers]
     smoothing = SmoothingFunction().method1
@@ -181,7 +181,31 @@ def spearman_correlation_evaluator(submitted_answer, correct_answers, scoring_da
     return correlation
 
 
-async def handle_submit_answer(websocket, index, submitted_answer, correct_andswers, scoring_data):
+async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data):
+    # Placeholder for evaluator dispatcher logic
+    if evaluator_type == "exact_match":
+        return exact_match_evaluator(submitted_answer, correct_answers)
+    elif evaluator_type == "numeric":
+        return numeric_evaluator(submitted_answer, correct_answers, scoring_data)
+    # Add other evaluators as necessary
+    return 0
+
+def exact_match_evaluator(submitted_answer, correct_answers):
+    # Example of a simple exact match evaluator
+    return 1 if submitted_answer in correct_answers else 0
+
+def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
+    # Placeholder for a numeric comparison evaluator
+    # This could involve comparing the submitted_answer to a numeric range or value
+    try:
+        submitted_value = float(submitted_answer)
+        correct_value = float(correct_answers[0])  # Assuming a single correct numeric answer
+        tolerance = scoring_data.get('tolerance', 0)  # Allow for some tolerance in the numeric comparison
+        return 1 if abs(submitted_value - correct_value) <= tolerance else 0
+    except (ValueError, TypeError):
+        return 0
+    
+async def handle_submit_answer(websocket, index, submitted_answer):
     # Ensure the function is called with the correct parameters:
     # `websocket` - the WebSocket connection of the defender
     # `index` - the index of the prompt being answered
@@ -251,44 +275,54 @@ def generate_direct_attack_prompt():
         attack = direct_attacks_queue.popleft()
     return attack['id'], attack['prompt'], attack['data'], attack['template'], {}
 
-def prompt_generator(file_path, chunk_size=1024):
-    """Safely yields ID, prompt, template, and optional attack info from direct attacks or a file."""
-    # Try to generate a prompt from the direct attacks queue
+def prompt_generator(directory_path, chunk_size=1024):
+    """Iterates over a directory of files to safely yield ID, prompt, template, and optional attack info."""
+    # First, try to generate a prompt from the direct attacks queue
     direct_attack_prompt = generate_direct_attack_prompt()
     if direct_attack_prompt:
         yield direct_attack_prompt
 
-    buffer = ''
-    try:
-        with open(file_path, 'r') as file:
-            while True:
-                chunk = file.read(chunk_size)
-                if not chunk:
-                    break
-                buffer += chunk
-                lines = buffer.split('\n')
-                for line in lines[:-1]:
-                    if line.startswith('Entry:'):
-                        _, entry_json = line.split('Entry: ', 1)
-                        entry = json.loads(entry_json.strip())
-                        id, prompt, data, template = entry["idx"], entry["prompt"], entry.get("data", {}), entry["template"]
+    for filename in os.listdir(directory_path):
+        file_path = os.path.join(directory_path, filename)
+        if os.path.isfile(file_path):
+            buffer = ''
+            try:
+                with open(file_path, 'r') as file:
+                    while True:
+                        chunk = file.read(chunk_size)
+                        if not chunk:
+                            break
+                        buffer += chunk
+                        lines = buffer.split('\n')
+                        for line in lines[:-1]:
+                            if line.startswith('Entry:'):
+                                _, entry_json = line.split('Entry: ', 1)
+                                entry = json.loads(entry_json.strip())
+                                id, prompt, data, template = entry["idx"], entry["prompt"], entry.get("data", {}), entry["template"]
 
-                        with queue_lock:
-                            attach_mods = attach_queue.get(id, {})
-                        prefix = attach_mods.get('prefix', '')
-                        postfix = attach_mods.get('postfix', '')
-                        modified_prompt = f"{prefix} {prompt} {postfix}".strip()
+                                with queue_lock:
+                                    attach_mods = attach_queue.get(id, {})
+                                prefix = attach_mods.get('prefix', '')
+                                postfix = attach_mods.get('postfix', '')
+                                modified_prompt = f"{prefix} {prompt} {postfix}".strip()
 
-                        attacker_info = {'teamname': attach_mods.get('teamname', '')} if attach_mods else {}
+                                attacker_info = {'teamname': attach_mods.get('teamname', '')} if attach_mods else {}
 
-                        yield id, modified_prompt, data, template, attacker_info
-                buffer = lines[-1]
-    except FileNotFoundError as e:
-        logging.error(f"File not found: {e}")
-    except json.JSONDecodeError as e:
-        logging.error(f"Error parsing JSON: {e}")
-    except Exception as e:
-        logging.error(f"Unexpected error: {e}")
+                                yield id, modified_prompt, data, template, attacker_info
+                        buffer = lines[-1]
+            except FileNotFoundError as e:
+                logging.error(f"File not found in {file_path}: {e}")
+            except json.JSONDecodeError as e:
+                logging.error(f"Error parsing JSON in file {filename}: {e}")
+            except Exception as e:
+                logging.error(f"Unexpected error processing file {filename}: {e}")
+
+            # Check for any remaining content in the buffer
+            if buffer.startswith('Entry:'):
+                _, entry_json = buffer.split('Entry: ', 1)
+                entry = json.loads(entry_json.strip())
+                yield entry["idx"], entry["prompt"], entry.get("data", {}), entry["template"], {}
+
 
     # Check for any remaining content
     if buffer.startswith('Entry:'):
@@ -398,7 +432,7 @@ async def handle_receive_prompt(websocket, session, file_path):
             }
 
             # Use the utility function to send the prompt text to the attacker
-            await safe_websocket_send(websocket, prompt_text)
+            await safe_websocket_send(websocket,  prompt_text)
         else:
             await safe_websocket_send(websocket, "ERROR: No more prompts available.")
     except StopIteration:
@@ -531,6 +565,8 @@ async def main():
     parser.add_argument('--dataset-templates', type=validate_file, required=False, default='./ds-templates.jsonl', help="Path to dataset templates file.")
     parser.add_argument('--port', type=int, default=6789, help="WebSocket server port.")
     parser.add_argument('--log-level', type=str, default='INFO', choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'], help="Set the logging level")
+    parser.add_argument('--prompts-dir', type=str, required=True, help="Path to the directory containing prompt files.")
+
     args = parser.parse_args()
     
     logging.basicConfig(level=getattr(logging, args.log_level.upper()), format='%(asctime)s - %(levelname)s - %(message)s')
@@ -538,6 +574,9 @@ async def main():
     # Load user data and dataset templates, using default path if not provided
     load_user_data(args.api_key_file)
     load_dataset_templates(args.dataset_templates)
+
+    prompts_dir = args.prompts_dir
+    prompt_gen = prompt_generator(prompts_dir)
 
 
     server = websockets.serve(handler, "localhost", args.port)
