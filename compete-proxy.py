@@ -84,90 +84,119 @@ unanswered_prompts = {}
 #     "attacker_team": "AttackerTeamName"
 # }
 
-async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data):
-    """Dispatches the submitted answer to the appropriate evaluator."""
-    evaluators = {
-        "exact_match": exact_match_evaluator,
-        "numeric": numeric_evaluator,
-        "f1_score": f1_score_evaluator,
-        "bleu_score": bleu_score_evaluator,
-        "accuracy": accuracy_evaluator,
-        "precision": precision_evaluator,
-        "recall": recall_evaluator,
-        "pearson_correlation": pearson_correlation_evaluator,
-        "spearman_correlation": spearman_correlation_evaluator
-    }
 
-    evaluator = evaluators.get(evaluator_type)
-    if evaluator:
-        # Handle evaluators expecting different parameters gracefully
-        if evaluator_type in ["exact_match", "f1_score", "bleu_score"]:
-            return evaluator(submitted_answer, correct_answers)
-        elif evaluator_type in ["numeric", "accuracy", "precision", "recall", "pearson_correlation", "spearman_correlation"]:
-            return evaluator(submitted_answer, correct_answers, scoring_data)
-    else:
+# External mapping dictionary for evaluators
+evaluators = {
+    "exact_match": exact_match_evaluator,
+    "numeric": numeric_evaluator,
+    "f1_score": f1_score_evaluator,
+    "bleu_score": bleu_score_evaluator,
+    "accuracy": accuracy_evaluator,
+    "precision": precision_evaluator,
+    "recall": recall_evaluator,
+    "pearson_correlation": pearson_correlation_evaluator,
+    "spearman_correlation": spearman_correlation_evaluator,
+}
+
+async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data={}):
+    """Dispatches the submitted answer to the appropriate evaluator based on the evaluator type."""
+    evaluator_function = evaluators.get(evaluator_type)
+
+    if evaluator_function is None:
         logging.error(f"Evaluator type '{evaluator_type}' not supported.")
+        return 0
+
+    try:
+        if evaluator_type in ["accuracy", "precision", "recall", "numeric", "pearson_correlation", "spearman_correlation"]:
+            return evaluator_function(submitted_answer, correct_answers, scoring_data)
+        else:
+            return evaluator_function(submitted_answer, correct_answers)
+    except Exception as e:
+        logging.error(f"Error during evaluation with {evaluator_type}: {str(e)}")
         return 0
 
 
 
-
 def exact_match_evaluator(submitted_answer, correct_answers):
-    """Checks if submitted answer exactly matches any of the correct answers."""
-    return int(submitted_answer in correct_answers)
+    return int(submitted_answer.strip() in [ans.strip() for ans in correct_answers])
 
 def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
-    """Evaluates numeric answers with optional tolerance."""
     try:
         submitted_value = float(submitted_answer)
-        correct_value = float(correct_answers[0])
+        correct_value = float(correct_answers[0])  # Assuming a single correct answer for simplicity
         tolerance = scoring_data.get('tolerance', 0)
         return int(abs(submitted_value - correct_value) <= tolerance)
     except (ValueError, TypeError):
         return 0
 
 def f1_score_evaluator(submitted_answer, correct_answers):
-    """Computes the F1 score for the submitted answer against the correct answers."""
-    # Tokenization or splitting should be handled as needed for your specific use case
+    # Assuming the submitted answer and correct answers are tokenized into lists
+    # This is a simplified example. Real usage might require adjustment.
     submitted_tokens = submitted_answer.split()
     correct_tokens = [ans.split() for ans in correct_answers]
-    scores = [f1_score([correct], [submitted_tokens], average='macro') for correct in correct_tokens]
-    return max(scores)
+    # Here we assume binary classification for the sake of simplicity
+    binary_submitted = [1 if token in submitted_tokens else 0 for token in correct_tokens[0]]
+    binary_correct = [1 for _ in correct_tokens[0]]
+    return f1_score(binary_correct, binary_submitted, average='binary')
 
 def bleu_score_evaluator(submitted_answer, correct_answers):
-    """Calculates the BLEU score for the submitted answer against the correct answers."""
-    # Tokenization or splitting should be handled as needed for your specific use case
     submitted_tokens = submitted_answer.split()
-    correct_tokens = [ans.split() for ans in correct_answers]
-    score = sentence_bleu(correct_tokens, submitted_tokens)
-    return score
+    correct_tokens_lists = [[ans.split()] for ans in correct_answers]
+    smoothing = SmoothingFunction().method1
+    return sentence_bleu(correct_tokens_lists, submitted_tokens, smoothing_function=smoothing)
 
-def accuracy_evaluator(submitted_answer, correct_answers):
-    """Calculates accuracy assuming the submitted answer is among the correct answers."""
-    return accuracy_score(correct_answers, [submitted_answer])
+def accuracy_evaluator(submitted_answer, correct_answers, scoring_data):
+    # Assuming binary classification; convert answers to numerical labels if needed
+    submitted_label = int(submitted_answer)
+    correct_labels = [int(ans) for ans in correct_answers]
+    return accuracy_score(correct_labels, [submitted_label])
 
-def precision_evaluator(submitted_answer, correct_answers):
-    """Calculates precision for classification tasks."""
-    return precision_score(correct_answers, [submitted_answer], average='macro')
+def precision_evaluator(submitted_answer, correct_answers, scoring_data):
+    submitted_label = int(submitted_answer)
+    correct_labels = [int(ans) for ans in correct_answers]
+    return precision_score(correct_labels, [submitted_label], average='binary', zero_division=0)
 
-def recall_evaluator(submitted_answer, correct_answers):
-    """Calculates recall for classification tasks."""
-    return recall_score(correct_answers, [submitted_answer], average='macro')
+def recall_evaluator(submitted_answer, correct_answers, scoring_data):
+    submitted_label = int(submitted_answer)
+    correct_labels = [int(ans) for ans in correct_answers]
+    return recall_score(correct_labels, [submitted_label], average='binary', zero_division=0)
 
-def pearson_correlation_evaluator(submitted_answer, correct_answers):
-    """Evaluates Pearson correlation between submitted and correct answers."""
-    submitted_value = float(submitted_answer)
-    correct_values = [float(ans) for ans in correct_answers]
-    correlation, _ = pearsonr(correct_values, [submitted_value])
+def pearson_correlation_evaluator(submitted_answer, correct_answers, scoring_data):
+    submitted_values = np.array([float(submitted_answer)])
+    correct_values = np.array([float(ans) for ans in correct_answers])
+    correlation, _ = pearsonr(submitted_values, correct_values)
     return correlation
 
-def spearman_correlation_evaluator(submitted_answer, correct_answers):
-    """Evaluates Spearman correlation between submitted and correct answers."""
-    submitted_value = float(submitted_answer)
-    correct_values = [float(ans) for ans in correct_answers]
-    correlation, _ = spearmanr(correct_values, [submitted_value])
+def spearman_correlation_evaluator(submitted_answer, correct_answers, scoring_data):
+    submitted_values = np.array([float(submitted_answer)])
+    correct_values = np.array([float(ans) for ans in correct_answers])
+    correlation, _ = spearmanr(submitted_values, correct_values)
     return correlation
 
+
+async def evaluate_answer(evaluator_type, submitted_answer, correct_answers, scoring_data):
+    # Placeholder for evaluator dispatcher logic
+    if evaluator_type == "exact_match":
+        return exact_match_evaluator(submitted_answer, correct_answers)
+    elif evaluator_type == "numeric":
+        return numeric_evaluator(submitted_answer, correct_answers, scoring_data)
+    # Add other evaluators as necessary
+    return 0
+
+def exact_match_evaluator(submitted_answer, correct_answers):
+    # Example of a simple exact match evaluator
+    return 1 if submitted_answer in correct_answers else 0
+
+def numeric_evaluator(submitted_answer, correct_answers, scoring_data):
+    # Placeholder for a numeric comparison evaluator
+    # This could involve comparing the submitted_answer to a numeric range or value
+    try:
+        submitted_value = float(submitted_answer)
+        correct_value = float(correct_answers[0])  # Assuming a single correct numeric answer
+        tolerance = scoring_data.get('tolerance', 0)  # Allow for some tolerance in the numeric comparison
+        return 1 if abs(submitted_value - correct_value) <= tolerance else 0
+    except (ValueError, TypeError):
+        return 0
     
 async def handle_submit_answer(websocket, index, submitted_answer):
     # Ensure the function is called with the correct parameters:
