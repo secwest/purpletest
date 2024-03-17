@@ -24,9 +24,7 @@ user_data = {}
 active_sessions = {"defender": {}, "attackers": []} 
 prompt_queue = asyncio.Queue()
 scores = {}
-for i in range(1, 101):
-    prompt_queue.put_nowait(f"Prompt #{i}")
-    scores[f"Team_{i}"] = 0  # Initialize scores
+
 
 def validate_file(file_path):
     if not Path(file_path).is_file():
