@@ -327,12 +327,40 @@ def prompt_generator(directory_path, chunk_size=1024):
 
 
 async def handle_receive_prompt(websocket, session):
+    global prompt_gen
     try:
-        prompt = next(prompts)  # Get the next prompt from the generator
-        return prompt['prompt']
+        # Attempt to get the next prompt from the prompt generator
+        prompt_data = next(prompt_gen)
+        
+        if prompt_data:
+            # Unpack the received data
+            prompt_id, prompt_text, data, template, attacker_info = prompt_data
+            
+            # If there are attacker modifications (prefix/postfix), they are already applied in the generator
+            # So, we directly use the prompt_text as it is
+            
+            # Store the prompt information for reference, especially useful for the defender
+            if session['role'] == "defender":
+                unanswered_prompts[prompt_id] = {
+                    "prompt": prompt_text,
+                    "data": data,
+                    "template": template,
+                    "attacks": []  # Initialize an empty list for potential attacks, to be filled later if any
+                }
+            
+            # Send the prompt (modified or not) to the websocket
+            await safe_websocket_send(websocket, prompt_text)
+        else:
+            # If no prompt data could be fetched, inform the client
+            await safe_websocket_send(websocket, "ERROR: No more prompts available.")
     except StopIteration:
-        return "ERROR: No more prompts available."
-    
+        # Inform the client if there are no more prompts available
+        await safe_websocket_send(websocket, "ERROR: No more prompts available.")
+    except Exception as e:
+        # Log any errors encountered during the process and inform the client
+        logging.error(f"Error handling receive prompt request: {str(e)}")
+        await safe_websocket_send(websocket, "ERROR: An internal error occurred while processing your request.")
+
 
 
 def load_user_data(api_key_file):
